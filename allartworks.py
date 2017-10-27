@@ -25,12 +25,13 @@ front_url="https://www.wikiart.org"
 print(result)
 print(len(result))
 for a in result:
-    print (a.text)
+    name = ' '.join(str(a.text).split(' ')[:-1])
+    print(name)
     num=re.search('\d+',a.text).group()
-    #print(num)
+    print(num)
     sum+=int(num)
-    #url=front_url+str(a.xpath('@href')[0]).split('?')[0]
-    url = front_url + str(a.xpath('@href')[0])
+    url=front_url+str(a.xpath('@href')[0]).split('?')[0]
+    #url = front_url + str(a.xpath('@href')[0])
     print(url)
 print(sum)
 req.close()
