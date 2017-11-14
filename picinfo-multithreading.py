@@ -3,8 +3,9 @@ import pymysql
 from bs4 import BeautifulSoup
 import requests
 import time
-
-conn = pymysql.connect(host='localhost',user='root',password='',db='wikiartbackup',charset='utf8')
+import urllib3
+urllib3.disable_warnings()
+conn = pymysql.connect(host='localhost',user='root',password='abc123',db='wikiartbackup',charset='utf8')
 cur=conn.cursor()
 headers = {
         # 'Referer':'https://www.wikiart.org/en/paintings-by-style',
@@ -13,7 +14,7 @@ headers = {
     }
 
 def getallurl():
-    sql = "SELECT id,painturl FROM backupallurl limit 100"
+    sql = "SELECT id,painturl FROM backupallurl"
     cur.execute(sql)
     urllist = cur.fetchall()
     return urllist
@@ -89,11 +90,49 @@ def getpicinfo(content):
     print(attritubeDict)
     return attritubeDict
 
-def insertinfo(attritubeDict):
-    pass
+def insertinfo(attritubeDict,id):
+    title = attritubeDict['title']
+    date = attritubeDict['date']
+    artist = attritubeDict['artist']
+    styleList = attritubeDict['style']
+    mediaList = attritubeDict['media']
+    genreList = attritubeDict['genre']
+    info_sql = "INSERT INTO picinfo(id,title,date,arist) " \
+               "VALUES(%s,%s,%s,%s)"%(id,title,date,artist)
+    cur.execute(info_sql)
+    conn.commit()
+    if len(styleList)!=0:
+        for style in styleList:
+            style_sql = "INSERT INTO style(id,style) VALUES (%s,%s)"%(id,style)
+            cur.execute(style_sql)
+            conn.commit()
+    if len(mediaList)!=0:
+        for media in mediaList:
+            media_sql = "INSERT INTO media(id,media) VALUES (%s,%s)"%(id,media)
+            cur.execute(media_sql)
+            conn.commit()
+    if len(genreList)!=0:
+        for genre in genreList:
+            genre_sql = "INSERT INTO genre(id,genre) VALUES (%s,%s)"%(id,genre)
+            cur.execute(genre_sql)
+            conn.commit()
+
 if __name__ == '__main__':
     urllist = getallurl()
     print len(urllist)
-    print urllist
+    # url = "https://www.wikiart.org"+urllist[0][1]
+    # url = "https://www.wikiart.org/en/mathias-goeritz/torres-de-sat-lite-collaboration-with-luis-barrag-n-and-jes-s-reyes-ferreira"
+    # print url
+    # page = downloadpage(url)
+    # data = getpicinfo(page)
+    # print data
+    # print data['media']
+    # print len(data['media'])
+    # print data['date'] is None
+    # for style in data['style']:
+    #     print style
+    # for media in data['media']:
+    #     print style
+
     cur.close()
     conn.close()
