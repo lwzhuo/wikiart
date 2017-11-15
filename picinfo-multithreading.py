@@ -42,8 +42,7 @@ def downloadpage(url):
                 print("***********************************ERROR***********************************")
                 break
         continue
-    if response is None:#连接失败 返回None
-        response.close()
+    if response == "":#连接失败 返回None
         return None
     else:
         response.close()
@@ -103,23 +102,31 @@ def insertinfo(attritubeDict,id):
     styleList = attritubeDict['style']
     mediaList = attritubeDict['media']
     genreList = attritubeDict['genre']
+    #空值判断预处理
+    if title is None:
+        title = "NULL"
+    if date is None:
+        date = "NULL"
+    if artist is None:
+        artist = "NULL"
+    #空值判断预处理结束
     info_sql = "INSERT INTO picinfo(id,title,date,artist) " \
-               "VALUES(%s,'%s','%s','%s')"%(id,title,date,artist)
-    cur.execute(info_sql)
+               "VALUES(%s,%s,%s,%s)"
+    cur.execute(info_sql,(id,title,date,artist))
     conn.commit()
     if len(styleList)!=0:
         for style in styleList:
-            style_sql = "INSERT INTO style(id,style) VALUES ('%s','%s')"%(id,style)
+            style_sql = 'INSERT INTO style(id,style) VALUES ("%s","%s")'%(id,style)
             cur.execute(style_sql)
             conn.commit()
     if len(mediaList)!=0:
         for media in mediaList:
-            media_sql = "INSERT INTO media(id,media) VALUES ('%s','%s')"%(id,media)
+            media_sql = 'INSERT INTO media(id,media) VALUES ("%s","%s")'%(id,media)
             cur.execute(media_sql)
             conn.commit()
     if len(genreList)!=0:
         for genre in genreList:
-            genre_sql = "INSERT INTO genre(id,genre) VALUES ('%s','%s')"%(id,genre)
+            genre_sql = 'INSERT INTO genre(id,genre) VALUES ("%s","%s")'%(id,genre)
             cur.execute(genre_sql)
             conn.commit()
 
@@ -130,11 +137,11 @@ class crawlThread(threading.Thread):
         self.urllist = urllist
     def run(self):
         while True:
-            print("Thread:",self.Tid,"run")
-            global i
             lock.acquire()
+            global i
             flag = i
             i+=1
+            print("Thread:",self.Tid,"run Pid:",flag+1)
             lock.release()
             if flag>len(urllist):#结束条件
                 break
@@ -172,14 +179,12 @@ if __name__ == '__main__':
     # for media in data['media']:
     #     print style
     #空值插入测试开始
-    # id=1
-    # title =None
-    # date = None
-    # artist =None
-    # info_sql = "INSERT INTO picinfo(id,title,date,artist) " \
-    #            "VALUES(%s,'%s','%s','%s')" % (id, title, date, artist)
-    # cur.execute(info_sql)
-    # conn.commit()
+    # url = "https://www.wikiart.org/en/facundus/la-sixi-me-trompette-les-anges-prisonniers-au-bord-de-l-euphrate-apoc-ix"
+    # cont = downloadpage(url)
+    # info = getpicinfo(cont)
+    # print(info)
+    # print (type(info['date']))
+    # insertinfo(info,1)
     #空值插入测试结束
     for i in range(200):
         t = crawlThread(i,urllist)
