@@ -10,12 +10,18 @@ urllib3.disable_warnings()
 conn = pymysql.connect(host='localhost',user='root',password='abc123',db='wikiartbackup',charset='utf8')
 cur=conn.cursor()
 headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36',
-        'Connection': 'Keep-Alive'
+    'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+    'Connection': 'Keep-Alive',
+    'Referer':'https://www.wikiart.org/',
+    'Upgrade-Insecure-Requests':'1',
+    'Host':'www.wikiart.org',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36'
     }
+apiUrl = ""#代理api网址
 i = 0
 lock = threading.Lock()
 errorPid = []
+proxyList = []#代理列表
 
 def getallurl():
     sql = "SELECT id,painturl FROM backupallurl"
@@ -23,7 +29,17 @@ def getallurl():
     urllist = cur.fetchall()
     return urllist
 
-def downloadpage(url):
+def getproxy():
+    response = requests.get(apiUrl)
+    ip = response.content
+    print(response.status_code)
+    proxy = dict()
+    proxy["http"] = str(ip, encoding="utf8").strip('\n')
+    proxy["https"] = str(ip, encoding="utf8").strip('\n')
+    response.close()
+
+
+def downloadpage(url,Pid):
     sess = requests.session()
     requests.adapters.DEFAULT_RETRIES = 5  # 增加重试连接次数
     sess.keep_alive = False  # keepalive 防止断开
@@ -32,20 +48,34 @@ def downloadpage(url):
     while response == "":
         try:
             response = sess.get(url=url, headers=headers, verify=False, timeout=10)
+            # print("Proxy:",proxylist["http"])
         except Exception as e:
-            print(e)
+            # print(e)
             if errortime<5:
-                print("***********************************WARNING***********************************")
+                lock.acquire()
+                # print("***********************************WARNING***********************************")
+                # file = open("ERRLOG.txt",'a')
+                # str = "WARNING:%d  %s\n" % (Pid, url)
+                # file.write(str)
+                # file.close()
+                lock.release()
                 time.sleep(5)
                 errortime+=1
             else:
-                print("***********************************ERROR***********************************")
+                lock.acquire()
+                # print("***********************************ERROR***********************************")
+                file = open("ERRLOG.txt",'a')
+                str="ERROR:%d  %s\n" % (Pid, url)
+                file.write(str)
+                file.close()
+                lock.release()
                 break
         continue
     if response == "":#连接失败 返回None
         return None
     else:
         response.close()
+        sess.close()
         return response.content
 
 def getpicinfo(content):
@@ -110,6 +140,7 @@ def insertinfo(attritubeDict,id):
     if artist is None:
         artist = "NULL"
     #空值判断预处理结束
+    lock.acquire()
     info_sql = "INSERT INTO picinfo(id,title,date,artist) " \
                "VALUES(%s,%s,%s,%s)"
     cur.execute(info_sql,(id,title,date,artist))
@@ -129,6 +160,7 @@ def insertinfo(attritubeDict,id):
             genre_sql = 'INSERT INTO genre(id,genre) VALUES ("%s","%s")'%(id,genre)
             cur.execute(genre_sql)
             conn.commit()
+    lock.release()
 
 class crawlThread(threading.Thread):
     def __init__(self,Tid,urllist):
@@ -141,28 +173,27 @@ class crawlThread(threading.Thread):
             global i
             flag = i
             i+=1
-            print("Thread:",self.Tid,"run Pid:",flag+1)
+            #print("Thread:",self.Tid,"run Pid:",flag+1)
             lock.release()
             if flag>len(urllist):#结束条件
                 break
             Pid = self.urllist[flag][0]
             fullurl = "https://www.wikiart.org" + self.urllist[flag][1]#补全URL
-            htmlpage = downloadpage(fullurl)
+            htmlpage = downloadpage(fullurl,Pid)
             if htmlpage is None:
                 lock.acquire()
-                print(self.Tid,"ERROR url:",fullurl,"Pid: ",Pid)
+                # print(self.Tid,"ERROR url:",fullurl,"Pid: ",Pid)
                 errorPid.append(Pid)
                 lock.release()
             else:
                 datadict = getpicinfo(htmlpage)
-                lock.acquire()#读入数据库上锁
                 insertinfo(datadict,Pid)
-                print(self.Tid,"success Pid:",Pid," URL:",fullurl," sleep 5s")
-                lock.release()
+                # print("Thread ",self.Tid,"success Pid:",Pid," URL:",fullurl," sleep 5s")
                 time.sleep(5)
 
 if __name__ == '__main__':
     urllist = getallurl()
+    #测试开始
     # print(urllist[0][0])
     # url = "https://www.wikiart.org"+urllist[0][1]
     # url = "https://www.wikiart.org/en/mathias-goeritz/torres-de-sat-lite-collaboration-with-luis-barrag-n-and-jes-s-reyes-ferreira"
@@ -186,7 +217,7 @@ if __name__ == '__main__':
     # print (type(info['date']))
     # insertinfo(info,1)
     #空值插入测试结束
-    for i in range(200):
+    for i in range(100):
         t = crawlThread(i,urllist)
         t.start()
     t.join()
