@@ -5,6 +5,7 @@ import requests
 import time
 import urllib3
 import threading
+import random
 
 urllib3.disable_warnings()
 conn = pymysql.connect(host='localhost',user='root',password='abc123',db='wikiartbackup',charset='utf8')
@@ -17,7 +18,7 @@ headers = {
     'Host':'www.wikiart.org',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36'
     }
-apiUrl = ""#代理api网址
+apiUrl = ""
 i = 0
 lock = threading.Lock()
 errorPid = []
@@ -32,12 +33,38 @@ def getallurl():
 def getproxy():
     response = requests.get(apiUrl)
     ip = response.content
-    print(response.status_code)
-    proxy = dict()
-    proxy["http"] = str(ip, encoding="utf8").strip('\n')
-    proxy["https"] = str(ip, encoding="utf8").strip('\n')
     response.close()
+    birthtime = time.time()#获取ip生成时间
+    # print(response.status_code)
+    if response.status_code == 200:
+        proxy = dict()
+        proxy["http"] = str(ip, encoding="utf8").strip('\n')
+        proxy["https"] = str(ip, encoding="utf8").strip('\n')
+        proxyInfo = (birthtime, proxy)
+        lock.acquire()
+        proxyList.append(proxyInfo)
+        file = open("PROXY.txt", 'a')
+        p = "Proxy:%s  Time:%s\n" % (proxyInfo[1]["http"],proxyInfo[0])
+        file.write(p)
+        file.close()
+        lock.release()
 
+def needGetProxy():#获得最后加进列表的ip的时间 计算是否大于6s 大于就加入 比避免频繁申请
+    nowtime = time.time()
+    birthtime = proxyList[len(proxyList)-1][0]
+    if nowtime - birthtime>=6:
+        return True
+    else:
+        return False
+
+def updateProxyList():#清除过时代理
+    lock.acquire()
+    nowtime = time.time()
+    if len(proxyList)>0:
+        for proxy in proxyList:
+            if nowtime - proxy[0]>110:#这批代理生存期120s
+                proxyList.remove(proxy)
+    lock.release()
 
 def downloadpage(url,Pid):
     sess = requests.session()
@@ -47,23 +74,30 @@ def downloadpage(url,Pid):
     errortime = 0
     while response == "":
         try:
-            response = sess.get(url=url, headers=headers, verify=False, timeout=10)
+            updateProxyList()
+            lock.acquire()
+            proxy = random.choice(proxyList)#随机抽取一个代理
+            proxy = proxy[1]
+            lock.release()
+            response = sess.get(url=url, headers=headers, proxies=proxy, verify=False, timeout=10)
             # print("Proxy:",proxylist["http"])
         except Exception as e:
-            # print(e)
-            if errortime<5:
+            print(e)
+            if errortime<30:#试错机会
                 lock.acquire()
-                # print("***********************************WARNING***********************************")
+                print("***********************************WARNING***********************************%s"%response)
                 # file = open("ERRLOG.txt",'a')
                 # str = "WARNING:%d  %s\n" % (Pid, url)
                 # file.write(str)
                 # file.close()
+                sess.close()
                 lock.release()
-                time.sleep(5)
+                # time.sleep(5)
+                # getproxy()
                 errortime+=1
             else:
                 lock.acquire()
-                # print("***********************************ERROR***********************************")
+                print("***********************************ERROR***********************************")
                 file = open("ERRLOG.txt",'a')
                 str="ERROR:%d  %s\n" % (Pid, url)
                 file.write(str)
@@ -169,11 +203,18 @@ class crawlThread(threading.Thread):
         self.urllist = urllist
     def run(self):
         while True:
+            # if self.Tid%15 == 1:#部分线程执行抓取新的代理的工作
+            #     getproxy()
+            lock.acquire()
+            flag = needGetProxy()
+            lock.release()
+            if flag:
+                getproxy()
             lock.acquire()
             global i
             flag = i
             i+=1
-            #print("Thread:",self.Tid,"run Pid:",flag+1)
+            # print("Thread:",self.Tid,"run Pid:",flag+1)
             lock.release()
             if flag>len(urllist):#结束条件
                 break
@@ -181,15 +222,15 @@ class crawlThread(threading.Thread):
             fullurl = "https://www.wikiart.org" + self.urllist[flag][1]#补全URL
             htmlpage = downloadpage(fullurl,Pid)
             if htmlpage is None:
-                lock.acquire()
-                # print(self.Tid,"ERROR url:",fullurl,"Pid: ",Pid)
-                errorPid.append(Pid)
-                lock.release()
+                # lock.acquire()
+                print(self.Tid,"ERROR url:",fullurl,"Pid: ",Pid)
+                # errorPid.append(Pid)#加入错误列表
+                # lock.release()
             else:
                 datadict = getpicinfo(htmlpage)
                 insertinfo(datadict,Pid)
-                # print("Thread ",self.Tid,"success Pid:",Pid," URL:",fullurl," sleep 5s")
-                time.sleep(5)
+                print("Thread ",self.Tid,"success Pid:",Pid," URL:",fullurl," sleep 5s")
+                # time.sleep(5)
 
 if __name__ == '__main__':
     urllist = getallurl()
@@ -217,9 +258,16 @@ if __name__ == '__main__':
     # print (type(info['date']))
     # insertinfo(info,1)
     #空值插入测试结束
-    for i in range(100):
+    print("初始化代理列表")
+    for i in range(15):
+        getproxy()
+        print(i,proxyList[i])
+        time.sleep(6)
+    print("代理列表初始化结束")
+    for i in range(300):
         t = crawlThread(i,urllist)
         t.start()
     t.join()
     cur.close()
     conn.close()
+    print("爬虫结束")
