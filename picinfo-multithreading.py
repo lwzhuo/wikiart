@@ -8,7 +8,7 @@ import threading
 import random
 
 urllib3.disable_warnings()
-conn = pymysql.connect(host='localhost',user='root',password='abc123',db='wikiartbackup',charset='utf8')
+conn = pymysql.connect(host='localhost',user='root',password='',db='wikiartbackup',charset='utf8')
 cur=conn.cursor()
 headers = {
     'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
@@ -25,7 +25,7 @@ errorPid = []
 proxyList = []#代理列表
 
 def getallurl():
-    sql = "SELECT id,painturl FROM backupallurl"
+    sql = "SELECT id,painturl FROM backupallurl WHERE id>110000"
     cur.execute(sql)
     urllist = cur.fetchall()
     return urllist
@@ -163,6 +163,7 @@ def getpicinfo(content):
         return None
 
 def insertinfo(attritubeDict,id):
+    status = True
     title = attritubeDict['title']
     date = attritubeDict['date']
     artist = attritubeDict['artist']
@@ -201,18 +202,39 @@ def insertinfo(attritubeDict,id):
     sql1+=")"
     sql2+=")"
     sql=sql1+sql2
+    #print(sql,argc)
+
+    # info_sql = "INSERT INTO picinfo(id,title,date,artist) " \
+    #            "VALUES(%s,%s,%s,%s)"
+    # cur.execute(info_sql,(id,title,date,artist))
+    # conn.commit()
+    # if len(styleList)!=0:
+    #     for style in styleList:
+    #         style_sql = 'INSERT INTO style(id,style) VALUES ("%s","%s")'%(id,style)
+    #         cur.execute(style_sql)
+    #         conn.commit()
+    # if len(mediaList)!=0:
+    #     for media in mediaList:
+    #         media_sql = 'INSERT INTO media(id,media) VALUES ("%s","%s")'%(id,media)
+    #         cur.execute(media_sql)
+    #         conn.commit()
+    # if len(genreList)!=0:
+    #     for genre in genreList:
+    #         genre_sql = 'INSERT INTO genre(id,genre) VALUES ("%s","%s")'%(id,genre)
+    #         cur.execute(genre_sql)
+    #         conn.commit()
+    lock.acquire()#给整个try语句上锁 防止造成卡死
     try:
-        lock.acquire()
-        cur.execute(sql,argc)
+        cur.execute(sql, argc)
         conn.commit()
-        lock.release()
-    except Exception as e:#插入异常处理
-        lock.acquire()
+    except Exception as e:  # 插入异常处理
         file = open("ERRLOG.txt", 'a')
         str = "ERROR:SQL Exception Pid:%d\n" % (id)
         file.write(str)
         file.close()
-        lock.release()
+        status = False
+    lock.release()
+    return status
 
 class crawlThread(threading.Thread):
     def __init__(self,Tid,urllist):
@@ -221,6 +243,8 @@ class crawlThread(threading.Thread):
         self.urllist = urllist
     def run(self):
         while True:
+            # if self.Tid%15 == 1:#部分线程执行抓取新的代理的工作
+            #     getproxy()
             lock.acquire()
             flag = needGetProxy()
             lock.release()
@@ -250,8 +274,10 @@ class crawlThread(threading.Thread):
                     file.close()
                     lock.release()
                 else:
-                    insertinfo(datadict,Pid)
-                    print("Thread ",self.Tid,"success Pid:",Pid," URL:",fullurl)
+                    if insertinfo(datadict,Pid) is True:
+                        print("Thread ",self.Tid,"success Pid:",Pid," URL:",fullurl)
+                    else:
+                        print("Thread ", self.Tid, "insert failure Pid:", Pid, " URL:", fullurl)
                 # time.sleep(5)
 
 if __name__ == '__main__':
