@@ -257,7 +257,7 @@ class crawlThread(threading.Thread):
             i+=1
             # print("Thread:",self.Tid,"run Pid:",flag+1)
             lock.release()
-            if flag>len(urllist):#结束条件
+            if flag >= len(urllist):  # 结束条件
                 break
             Pid = self.urllist[flag][0]
             fullurl = "https://www.wikiart.org" + self.urllist[flag][1]#补全URL
